@@ -45,6 +45,13 @@
   .forgot{display:block;width:100%;text-align:center;font-size:13px;font-weight:600;color:var(--teal);background:none;border:none;margin:16px 0 0;cursor:pointer;font-family:'Inter',sans-serif}
   .btn-primary{width:100%;padding:15px;border:none;border-radius:999px;background:var(--blue);color:#fff;font-family:'Poppins',sans-serif;font-weight:600;font-size:15px;margin-top:24px;cursor:pointer}
   .btn-primary:active{opacity:.85}
+  .btn-primary:disabled{opacity:.6}
+  .login-msg{min-height:0;margin:10px 0 0;font-size:12.5px;text-align:center;color:#FCA5A5}
+  .login-msg:empty{display:none}
+  .mfield{width:100%;border:1px solid #CBD5E1;border-radius:12px;padding:13px;font-size:14px;font-family:'Inter',sans-serif;margin:4px 0 12px;outline:none;color:var(--ink)}
+  .mlabel{display:block;font-size:12px;font-weight:600;color:var(--ink)}
+  .mmsg{font-size:12px;margin:0 0 12px;line-height:1.45}
+  .mmsg.err{color:#B91C1C}.mmsg.ok{color:#2F6B12}.mmsg:empty{display:none}
   .copyright{font-size:11px;color:rgba(255,255,255,.35);margin:18px 0 20px;text-align:center}
 
   /* ---------- APP ---------- */
@@ -177,8 +184,10 @@
         <input class="field" id="cpf" placeholder="000.000.000-00" inputmode="numeric">
         <label class="field-label">Senha</label>
         <input class="field" id="senha" type="password" placeholder="Insira sua senha" style="margin-bottom:0">
-        <button class="btn-primary" onclick="entrar()">Entrar</button>
-        <button class="forgot">Esqueci minha senha</button>
+        <button class="btn-primary" id="btnEntrar" onclick="entrar()">Entrar</button>
+        <p class="login-msg" id="loginMsg" role="alert"></p>
+        <button class="forgot" onclick="abrirSenha('redefinir')">Esqueci minha senha</button>
+        <button class="forgot" style="margin-top:8px" onclick="abrirSenha('primeiro')">Primeiro acesso? Crie sua senha</button>
       </div>
       <p class="copyright">© Viva+ Benefícios 2026</p>
     </div>
@@ -238,8 +247,8 @@
       <div class="body hide" id="tab-perfil">
         <div class="plan">
           <small>Plano ativo</small>
-          <b>Viva+ Empresarial</b>
-          <span>Matrícula 00482 · Empresa Exemplo Ltda</span>
+          <b id="planNome">Viva+ Empresarial</b>
+          <span id="planInfo">Matrícula 00482 · Empresa Exemplo Ltda</span>
         </div>
         <button class="row">Meus dados <span class="chev">›</span></button>
         <button class="row" onclick="abrirCarteirinha()">Carteirinha digital <span class="chev">›</span></button>
@@ -296,13 +305,13 @@
             <div class="cart-item"><small>CPF</small><b id="cartCpf">•••.456.789-••</b></div>
           </div>
           <div class="cart-grid" style="margin-top:12px">
-            <div class="cart-item"><small>Início de vigência</small><b>01/03/2026</b></div>
+            <div class="cart-item"><small>Início de vigência</small><b id="cartDesde">01/03/2026</b></div>
             <div class="cart-item"><small>Situação</small><b style="color:#5FE0A0">Ativo</b></div>
           </div>
         </div>
         <div class="cart-foot">
           <div class="cart-bars" id="cartBars"></div>
-          <span class="cart-num">7891 0048 2011 73</span>
+          <span class="cart-num" id="cartNum">7891 0048 2011 73</span>
         </div>
       </div>
       <div class="cart-actions">
@@ -310,6 +319,32 @@
         <button class="cart-share" onclick="alert('No app final, isso salva a carteirinha na galeria ou compartilha.')">Compartilhar</button>
       </div>
       <p class="cart-aviso">Apresente esta carteirinha junto com um documento com foto na rede credenciada.</p>
+    </div>
+  </div>
+
+  <!-- PRIMEIRO ACESSO / REDEFINIR SENHA (mesmo acesso do site: Acesso Cliente) -->
+  <div class="modal hide" id="senhaBox">
+    <div class="box">
+      <h4 id="senhaTitulo">Redefinir senha</h4>
+      <div id="senhaPasso1">
+        <p>Digite seu CPF. Enviaremos um código para o e-mail cadastrado na contratação.</p>
+        <label class="mlabel" for="sCpf">CPF</label>
+        <input class="mfield" id="sCpf" inputmode="numeric" placeholder="000.000.000-00">
+      </div>
+      <div id="senhaPasso2" class="hide">
+        <p>Digite o código de 6 dígitos que enviamos para o seu e-mail e crie a senha (mínimo 8 caracteres, com letras e números).</p>
+        <label class="mlabel" for="sCod">Código</label>
+        <input class="mfield" id="sCod" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+        <label class="mlabel" for="sSenha">Nova senha</label>
+        <input class="mfield" id="sSenha" type="password" autocomplete="new-password">
+        <label class="mlabel" for="sSenha2">Repita a senha</label>
+        <input class="mfield" id="sSenha2" type="password" autocomplete="new-password">
+      </div>
+      <p class="mmsg" id="senhaMsg" role="status"></p>
+      <div class="btns">
+        <button class="btn-cancel" onclick="fecharSenha()">Cancelar</button>
+        <button class="btn-ok" id="senhaBtn" onclick="avancarSenha()">Enviar código</button>
+      </div>
     </div>
   </div>
 
@@ -376,15 +411,103 @@ let categoriaAtiva = "Todos";
 let linkPendente = null;
 
 /* ---------- navegação ---------- */
+/* ---------- acesso (mesmo login do site: Acesso Cliente, CPF + senha) ---------- */
+const API_ACESSO = 'https://script.google.com/macros/s/AKfycbyi9OkzuqHJ5NsLBtOaC8-NTS1B18OLM2O9ND3SWrlQPILJpYQ2jAQ2MBlKvG2q4Q3l/exec';
+function api(dados){
+  return fetch(API_ACESSO, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(dados) })
+    .then(r => r.json()).catch(() => ({ ok: false, erro: 'Sem conexão no momento. Tente novamente.' }));
+}
+function sessaoApp(){ try { return JSON.parse(localStorage.getItem('vivaApp') || 'null'); } catch(e){ return null; } }
+function guardarSessao(v){ try { if(v) localStorage.setItem('vivaApp', JSON.stringify(v)); else localStorage.removeItem('vivaApp'); } catch(e){} }
+function soNum(v){ return String(v || '').replace(/\D/g, ''); }
+function nomeBonito(n){ return String(n || '').toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase()); }
+function mostrarApp(){ document.getElementById('login').classList.add('hide'); document.getElementById('app').classList.remove('hide'); }
+function mostrarLogin(msg){
+  document.getElementById('app').classList.add('hide'); document.getElementById('login').classList.remove('hide');
+  document.getElementById('loginMsg').textContent = msg || ''; irTab('inicio');
+}
+function preencher(d){
+  const k = d.carteirinha, dd = d.dados || {}, primeiro = nomeBonito(String(d.nome || '').split(' ')[0]);
+  document.querySelector('#greet strong').textContent = primeiro;
+  if(!k) return;
+  document.getElementById('planNome').textContent = 'Viva+ Nacional Premium';
+  document.getElementById('planInfo').textContent = 'Carteirinha ' + k.numero + ' · ' + (dd.contratante || 'Pessoa física');
+  document.getElementById('cartNome').textContent = nomeBonito(k.nome);
+  document.getElementById('cartPlano').textContent = k.plano.replace('Nacional Premium · ', 'Viva+ ') + (dd.contratante ? ' · ' + dd.contratante : '');
+  document.getElementById('cartMat').textContent = k.numero;
+  document.getElementById('cartCpf').textContent = k.cpf.replace(/\*/g, '•');
+  document.getElementById('cartDesde').textContent = k.desde;
+  document.getElementById('cartNum').textContent = k.numero;
+}
+function carregarDados(){
+  const s = sessaoApp(); if(!s) return Promise.resolve(false);
+  return api({ api: 'painel', token: s.token }).then(r => {
+    if(!r.ok){ guardarSessao(null); if(r.sessao === false) mostrarLogin('Sua sessão expirou. Entre de novo.'); return false; }
+    preencher(r); return true;
+  });
+}
 function entrar(){
-  document.getElementById('login').classList.add('hide');
-  document.getElementById('app').classList.remove('hide');
+  const cpf = soNum(document.getElementById('cpf').value), senha = document.getElementById('senha').value;
+  const msg = document.getElementById('loginMsg'), btn = document.getElementById('btnEntrar');
+  if(cpf.length !== 11){ msg.textContent = 'Digite o CPF com 11 números.'; return; }
+  if(!senha){ msg.textContent = 'Digite sua senha.'; return; }
+  msg.textContent = ''; btn.disabled = true; btn.textContent = 'Entrando…';
+  api({ api: 'login', perfil: 'cliente', id: cpf, senha: senha }).then(r => {
+    btn.disabled = false; btn.textContent = 'Entrar';
+    if(!r.ok){ msg.textContent = String(r.erro || 'Não foi possível entrar.').replace('Use "Esqueci / redefinir senha".', 'Toque em "Primeiro acesso" logo abaixo.'); return; }
+    guardarSessao({ token: r.token, nome: r.nome });
+    document.getElementById('senha').value = '';
+    document.querySelector('#greet strong').textContent = nomeBonito(String(r.nome || '').split(' ')[0]);
+    mostrarApp(); carregarDados();
+  });
 }
 function sair(){
-  document.getElementById('app').classList.add('hide');
-  document.getElementById('login').classList.remove('hide');
-  irTab('inicio');
+  const s = sessaoApp(); if(s) api({ api: 'sair', token: s.token });
+  guardarSessao(null); mostrarLogin('');
 }
+// primeiro acesso / redefinir senha
+let modoSenha = 'redefinir', passoSenha = 1, cpfSenha = '';
+function abrirSenha(modo){
+  modoSenha = modo; passoSenha = 1;
+  document.getElementById('senhaTitulo').textContent = modo === 'primeiro' ? 'Primeiro acesso' : 'Redefinir senha';
+  document.getElementById('senhaPasso1').classList.remove('hide'); document.getElementById('senhaPasso2').classList.add('hide');
+  document.getElementById('senhaBtn').textContent = 'Enviar código'; document.getElementById('senhaMsg').textContent = '';
+  document.getElementById('sCpf').value = document.getElementById('cpf').value;
+  ['sCod','sSenha','sSenha2'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('senhaBox').classList.remove('hide');
+}
+function fecharSenha(){ document.getElementById('senhaBox').classList.add('hide'); }
+function avancarSenha(){
+  const msg = document.getElementById('senhaMsg'), btn = document.getElementById('senhaBtn');
+  const aviso = (t, ok) => { msg.textContent = t; msg.className = 'mmsg ' + (ok ? 'ok' : 'err'); };
+  if(passoSenha === 1){
+    cpfSenha = soNum(document.getElementById('sCpf').value);
+    if(cpfSenha.length !== 11) return aviso('Digite o CPF com 11 números.');
+    btn.disabled = true;
+    api({ api: 'codigo', perfil: 'cliente', id: cpfSenha }).then(() => {
+      btn.disabled = false; passoSenha = 2;
+      document.getElementById('senhaPasso1').classList.add('hide'); document.getElementById('senhaPasso2').classList.remove('hide');
+      btn.textContent = modoSenha === 'primeiro' ? 'Criar senha' : 'Salvar nova senha';
+      aviso('Se o CPF estiver cadastrado, o código chega no e-mail em instantes (olhe também o spam).', true);
+    });
+    return;
+  }
+  const cod = soNum(document.getElementById('sCod').value), s1 = document.getElementById('sSenha').value, s2 = document.getElementById('sSenha2').value;
+  if(cod.length !== 6) return aviso('Digite os 6 números do código.');
+  if(s1.length < 8 || !/[a-zA-Z]/.test(s1) || !/\d/.test(s1)) return aviso('A senha precisa ter 8 caracteres ou mais, com letras e números.');
+  if(s1 !== s2) return aviso('As senhas não são iguais.');
+  btn.disabled = true;
+  api({ api: 'definirSenha', perfil: 'cliente', id: cpfSenha, codigo: cod, senha: s1 }).then(r => {
+    btn.disabled = false;
+    if(!r.ok) return aviso(r.erro || 'Não foi possível salvar.');
+    fecharSenha(); document.getElementById('cpf').value = cpfSenha;
+    document.getElementById('loginMsg').textContent = '';
+    alertaLogin(modoSenha === 'primeiro' ? 'Senha criada! Agora é só entrar.' : 'Senha alterada! Agora é só entrar.');
+  });
+}
+function alertaLogin(t){ const m = document.getElementById('loginMsg'); m.style.color = '#5FE0A0'; m.textContent = t; setTimeout(() => { m.style.color = ''; }, 6000); }
+// já logado neste aparelho? abre direto
+if(sessaoApp()){ mostrarApp(); carregarDados(); }
 function irTab(tab){
   ['inicio','clube','perfil','saude'].forEach(t=>{
     const el = document.getElementById('tab-'+t);
