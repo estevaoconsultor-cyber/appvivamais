@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Viva+ Benefícios</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -159,6 +159,32 @@
   .modal button{flex:1;padding:11px;border-radius:12px;border:none;font-size:14px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif}
   .btn-cancel{background:#F1F5F9;color:var(--muted)}
   .btn-ok{background:var(--blue);color:#fff}
+
+  /* ---------- Tela cheia no celular: sem moldura e sem a página "andar" ---------- */
+  html,body{overscroll-behavior:none}
+  .hero{height:auto;flex:1 1 47%;min-height:120px}
+  .login-body{flex:0 0 auto}
+  .btn-primary{padding:12px;font-size:14.5px;margin-top:20px}
+  @media (max-width:500px){
+    body{padding:0;min-height:0;height:100%;overflow:hidden;background:var(--navy)}
+    .phone{position:fixed;inset:0;max-width:none;height:auto;border:0;border-radius:0;box-shadow:none}
+    .notch{display:none}
+    .field,.mfield{font-size:16px}   /* evita o zoom automático do iPhone ao tocar no campo */
+    .copyright{margin:12px 0 calc(14px + env(safe-area-inset-bottom))}
+  }
+
+  /* ---------- Animações suaves ---------- */
+  @keyframes vmEntra{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @keyframes vmZoom{from{transform:scale(1.08)}to{transform:scale(1)}}
+  @keyframes vmSai{to{opacity:0;transform:scale(.97)}}
+  @keyframes vmFade{from{opacity:0}to{opacity:1}}
+  .anima{animation:vmEntra .6s cubic-bezier(.2,.7,.2,1) both;animation-delay:var(--d,0s)}
+  #login .hero img{animation:vmZoom 1.8s cubic-bezier(.2,.7,.2,1) both}
+  #login.saindo{animation:vmSai .38s ease forwards;pointer-events:none}
+  #app.chegando{animation:vmFade .45s ease both}
+  @media (prefers-reduced-motion:reduce){
+    .anima,#login .hero img,#login.saindo,#app.chegando{animation:none !important}
+  }
 </style>
 </head>
 <body>
@@ -421,10 +447,36 @@ function sessaoApp(){ try { return JSON.parse(localStorage.getItem('vivaApp') ||
 function guardarSessao(v){ try { if(v) localStorage.setItem('vivaApp', JSON.stringify(v)); else localStorage.removeItem('vivaApp'); } catch(e){} }
 function soNum(v){ return String(v || '').replace(/\D/g, ''); }
 function nomeBonito(n){ return String(n || '').toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase()); }
-function mostrarApp(){ document.getElementById('login').classList.add('hide'); document.getElementById('app').classList.remove('hide'); }
+// entrada suave dos elementos (um depois do outro)
+function animar(els, base, passo){
+  els.filter(Boolean).forEach((el, i) => {
+    el.classList.remove('anima'); void el.offsetWidth;
+    el.style.setProperty('--d', (base + i * passo).toFixed(2) + 's');
+    el.classList.add('anima');
+    el.addEventListener('animationend', () => el.classList.remove('anima'), { once: true });
+  });
+}
+function animarLogin(){
+  const b = document.querySelector('#login .login-body'); if(!b) return;
+  const form = b.querySelector('div');
+  animar([b.querySelector('.logo-login'), b.querySelector('.tagline')].concat(form ? [...form.children] : [], [b.querySelector('.copyright')]), .12, .05);
+}
+function animarApp(){
+  const app = document.getElementById('app');
+  animar([...app.querySelectorAll('.header-row, .greet')], .05, .08);
+  const aba = [...app.querySelectorAll('.body')].find(x => !x.classList.contains('hide'));
+  if(aba) animar([...aba.children], .18, .05);
+  animar([app.querySelector('.nav')], .22, 0);
+}
+function mostrarApp(suave){
+  const login = document.getElementById('login'), app = document.getElementById('app');
+  const abrir = () => { login.classList.add('hide'); login.classList.remove('saindo'); app.classList.remove('hide'); app.classList.add('chegando'); animarApp(); setTimeout(() => app.classList.remove('chegando'), 500); };
+  if(suave && !login.classList.contains('hide')){ login.classList.add('saindo'); setTimeout(abrir, 380); }
+  else abrir();
+}
 function mostrarLogin(msg){
   document.getElementById('app').classList.add('hide'); document.getElementById('login').classList.remove('hide');
-  document.getElementById('loginMsg').textContent = msg || ''; irTab('inicio');
+  document.getElementById('loginMsg').textContent = msg || ''; irTab('inicio'); animarLogin();
 }
 function preencher(d){
   const k = d.carteirinha, dd = d.dados || {}, primeiro = nomeBonito(String(d.nome || '').split(' ')[0]);
@@ -458,7 +510,7 @@ function entrar(){
     guardarSessao({ token: r.token, nome: r.nome });
     document.getElementById('senha').value = '';
     document.querySelector('#greet strong').textContent = nomeBonito(String(r.nome || '').split(' ')[0]);
-    mostrarApp(); carregarDados();
+    mostrarApp(true); carregarDados();
   });
 }
 function sair(){
@@ -507,7 +559,7 @@ function avancarSenha(){
 }
 function alertaLogin(t){ const m = document.getElementById('loginMsg'); m.style.color = '#5FE0A0'; m.textContent = t; setTimeout(() => { m.style.color = ''; }, 6000); }
 // já logado neste aparelho? abre direto
-if(sessaoApp()){ mostrarApp(); carregarDados(); }
+if(sessaoApp()){ mostrarApp(); carregarDados(); } else animarLogin();
 function irTab(tab){
   ['inicio','clube','perfil','saude'].forEach(t=>{
     const el = document.getElementById('tab-'+t);
