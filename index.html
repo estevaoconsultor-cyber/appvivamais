@@ -159,6 +159,11 @@
   .modal button{flex:1;padding:11px;border-radius:12px;border:none;font-size:14px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif}
   .btn-cancel{background:#F1F5F9;color:var(--muted)}
   .btn-ok{background:var(--blue);color:#fff}
+  .btn-ok.red{background:#B91C1C}
+  .btn-ok:disabled{opacity:.6}
+  textarea.mfield{resize:none;min-height:72px;line-height:1.4}
+  .mlink{display:block;text-align:center;padding:11px;border-radius:12px;background:var(--blue);color:#fff;font-size:14px;font-weight:500;text-decoration:none;margin:0 0 12px}
+  .row-canc{color:#B91C1C}
 
   /* ---------- Tela cheia no celular: sem moldura e sem a página "andar" ---------- */
   html,body{overscroll-behavior:none}
@@ -280,6 +285,7 @@
         <button class="row" onclick="abrirCarteirinha()">Carteirinha digital <span class="chev">›</span></button>
         <button class="row">Histórico de consultas <span class="chev">›</span></button>
         <button class="row">Central de ajuda <span class="chev">›</span></button>
+        <button class="row row-canc hide" id="rowCancelar" onclick="abrirCancelar()"><span id="rowCancelarTxt">Cancelar plano</span> <span class="chev">›</span></button>
         <button class="btn-out" onclick="sair()">Sair</button>
       </div>
     </div>
@@ -370,6 +376,24 @@
       <div class="btns">
         <button class="btn-cancel" onclick="fecharSenha()">Cancelar</button>
         <button class="btn-ok" id="senhaBtn" onclick="avancarSenha()">Enviar código</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DESISTÊNCIA (7 DIAS) / CANCELAMENTO DO PLANO — mesmo pedido da área do cliente no site -->
+  <div class="modal hide" id="cancelBox">
+    <div class="box">
+      <h4 id="cancelTitulo">Desistir da contratação</h4>
+      <p id="cancelTxt"></p>
+      <div id="cancelForm">
+        <label class="mlabel" for="cMotivo">Motivo (opcional)</label>
+        <textarea class="mfield" id="cMotivo" maxlength="300" placeholder="Se quiser, conte o motivo"></textarea>
+      </div>
+      <p class="mmsg" id="cancelMsg" role="status"></p>
+      <a class="mlink hide" id="cancelLink" target="_blank" rel="noopener noreferrer">Informar conta para reembolso</a>
+      <div class="btns">
+        <button class="btn-cancel" id="cancelVoltar" onclick="fecharCancelar()">Voltar</button>
+        <button class="btn-ok red" id="cancelBtn" onclick="confirmarCancelar()">Confirmar</button>
       </div>
     </div>
   </div>
@@ -481,9 +505,18 @@ function mostrarLogin(msg){
 function preencher(d){
   const k = d.carteirinha, dd = d.dados || {}, primeiro = nomeBonito(String(d.nome || '').split(' ')[0]);
   document.querySelector('#greet strong').textContent = primeiro;
-  if(!k) return;
+  prepararCancelamento(d.cancelamento);
+  if(!k){
+    if(d.cancelamento && (d.cancelamento.estado === 'desistiu' || d.cancelamento.estado === 'cancelado')){
+      document.querySelector('.plan small').textContent = 'Plano';
+      document.getElementById('planNome').textContent = 'Plano cancelado';
+      document.getElementById('planInfo').textContent = d.cancelamento.estado === 'desistiu' ? 'Desistência em ' + String(d.cancelamento.pedido).split(' ')[0] : 'Encerrado em ' + d.cancelamento.fim;
+    }
+    return;
+  }
   document.getElementById('planNome').textContent = 'Viva+ Nacional Premium';
-  document.getElementById('planInfo').textContent = 'Carteirinha ' + k.numero + ' · ' + (dd.contratante || 'Pessoa física');
+  document.getElementById('planInfo').textContent = 'Carteirinha ' + k.numero + ' · ' + (dd.contratante || 'Pessoa física') +
+    (d.cancelamento && d.cancelamento.estado === 'cancelamento_agendado' ? ' · ativo até ' + d.cancelamento.fim : '');
   document.getElementById('cartNome').textContent = nomeBonito(k.nome);
   document.getElementById('cartPlano').textContent = k.plano.replace('Nacional Premium · ', 'Viva+ ') + (dd.contratante ? ' · ' + dd.contratante : '');
   document.getElementById('cartMat').textContent = k.numero;
@@ -555,6 +588,61 @@ function avancarSenha(){
     fecharSenha(); document.getElementById('cpf').value = cpfSenha;
     document.getElementById('loginMsg').textContent = '';
     alertaLogin(modoSenha === 'primeiro' ? 'Senha criada! Agora é só entrar.' : 'Senha alterada! Agora é só entrar.');
+  });
+}
+// desistência (até 7 dias, com reembolso) ou cancelamento (aviso de 30 dias)
+let CANC = null;
+function comoDevolve(forma){
+  forma = String(forma || '');
+  if(/Boleto/i.test(forma)) return 'Como o pagamento é por boleto, você informa a sua conta bancária num link seguro do Asaas e recebe o valor por lá.';
+  if(/Cart/i.test(forma)) return 'No cartão, o estorno é automático e aparece na fatura.';
+  return 'No Pix, o valor volta automaticamente para a mesma conta que pagou.';
+}
+function prepararCancelamento(info){
+  CANC = info || null;
+  const row = document.getElementById('rowCancelar');
+  if(!CANC){ row.classList.add('hide'); return; }
+  document.getElementById('rowCancelarTxt').textContent = ({ pode_desistir: 'Desistir do plano (até ' + CANC.prazo + ')', pode_cancelar: 'Cancelar plano', desistiu: 'Plano cancelado · reembolso',
+    cancelamento_agendado: 'Cancelamento agendado', cancelado: 'Plano cancelado', processando: 'Cancelamento em processamento' })[CANC.estado] || 'Cancelar plano';
+  row.classList.remove('hide');
+}
+function linkSeguro(u){ return /^https:\/\/([a-z0-9-]+\.)*asaas\.com\//i.test(String(u || '')) ? u : ''; }
+function abrirCancelar(){
+  if(!CANC) return;
+  const e = CANC.estado, pode = e === 'pode_desistir' || e === 'pode_cancelar';
+  const t = {
+    pode_desistir: ['Desistir do plano', 'Você pode desistir até ' + CANC.prazo + ' e receber de volta tudo o que pagou (art. 49 do Código de Defesa do Consumidor). ' + comoDevolve(CANC.pagamento) + ' O plano e os dependentes são cancelados na hora e não há novas cobranças.'],
+    pode_cancelar: ['Cancelar plano', 'Sem multa, com aviso de 30 dias, como prevê o contrato: os benefícios continuam até ' + CANC.fim + '. Mensalidades com vencimento até essa data continuam valendo; depois dela não há novas cobranças.'],
+    desistiu: ['Plano cancelado (desistência)', 'Pedido feito em ' + CANC.pedido + '. Não haverá novas cobranças.' + (CANC.reembolso ? ' Reembolso: ' + CANC.reembolso + '.' : '')],
+    cancelamento_agendado: ['Cancelamento agendado', 'Pedido feito em ' + CANC.pedido + '. Os benefícios continuam ativos até ' + CANC.fim + '; depois disso não haverá novas cobranças.'],
+    cancelado: ['Plano cancelado', 'Os benefícios foram encerrados em ' + CANC.fim + '. Quer voltar? Fale com a Viva+ pelo WhatsApp (11) 92592-3668.']
+  }[e] || ['Pedido em processamento', 'Recebemos o seu pedido e ele está sendo processado. Dúvidas: WhatsApp (11) 92592-3668.'];
+  document.getElementById('cancelTitulo').textContent = t[0];
+  document.getElementById('cancelTxt').textContent = t[1]; document.getElementById('cancelTxt').classList.remove('hide');
+  document.getElementById('cancelForm').classList.toggle('hide', !pode);
+  document.getElementById('cMotivo').value = '';
+  const msg = document.getElementById('cancelMsg'); msg.textContent = ''; msg.className = 'mmsg';
+  const btn = document.getElementById('cancelBtn'); btn.classList.toggle('hide', !pode); btn.disabled = false;
+  btn.textContent = e === 'pode_desistir' ? 'Confirmar desistência' : 'Confirmar cancelamento';
+  document.getElementById('cancelVoltar').textContent = pode ? 'Voltar' : 'Fechar';
+  mostrarLinkReembolso(CANC.linkReembolso);
+  document.getElementById('cancelBox').classList.remove('hide');
+}
+function mostrarLinkReembolso(u){ const a = document.getElementById('cancelLink'); u = linkSeguro(u); a.classList.toggle('hide', !u); if(u) a.href = u; else a.removeAttribute('href'); }
+function fecharCancelar(){ document.getElementById('cancelBox').classList.add('hide'); }
+function confirmarCancelar(){
+  const s = sessaoApp(); if(!s) return mostrarLogin('Sua sessão expirou. Entre de novo.');
+  const btn = document.getElementById('cancelBtn'), voltar = document.getElementById('cancelVoltar'), msg = document.getElementById('cancelMsg');
+  btn.disabled = true; voltar.disabled = true; btn.textContent = 'Enviando…';
+  api({ api: 'cancelar', token: s.token, confirmar: 'sim', motivo: document.getElementById('cMotivo').value }).then(r => {
+    voltar.disabled = false;
+    if(r.sessao === false){ fecharCancelar(); guardarSessao(null); return mostrarLogin('Sua sessão expirou. Entre de novo.'); }
+    if(!r.ok){ btn.disabled = false; btn.textContent = 'Tentar de novo'; msg.className = 'mmsg err'; msg.textContent = r.erro || 'Não foi possível concluir agora.'; return; }
+    msg.className = 'mmsg ok'; msg.textContent = r.mensagem;
+    document.getElementById('cancelForm').classList.add('hide'); btn.classList.add('hide'); voltar.textContent = 'Fechar';
+    document.getElementById('cancelTxt').classList.add('hide');
+    mostrarLinkReembolso(r.linkReembolso);
+    carregarDados();
   });
 }
 function alertaLogin(t){ const m = document.getElementById('loginMsg'); m.style.color = '#5FE0A0'; m.textContent = t; setTimeout(() => { m.style.color = ''; }, 6000); }
@@ -699,6 +787,7 @@ const LOGO_SRC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfsAAADcCAMAAABA
 document.querySelectorAll('[data-logo]').forEach(el => el.src = LOGO_SRC);
 
 function abrirCarteirinha(){
+  if(CANC && (CANC.estado === 'desistiu' || CANC.estado === 'cancelado')) return abrirCancelar();   // plano cancelado: mostra a situação
   const bars = document.getElementById('cartBars');
   if(!bars.children.length){
     for(let i=0;i<44;i++){
